@@ -11,6 +11,8 @@ using Microsoft.IdentityModel.Tokens;
 using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
+// add openapi for api documentation
+
 
 // ---------------------------------------------------------------
 // JWT Settings
@@ -130,6 +132,8 @@ builder.Services.AddProblemDetails();
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+builder.Services.AddOpenApi();
+
 
 // ---------------------------------------------------------------
 // S3 Storage Configuration
