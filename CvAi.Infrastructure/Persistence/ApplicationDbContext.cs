@@ -42,6 +42,9 @@ public sealed class ApplicationDbContext : IdentityDbContext<ApplicationUser>
             entity.Property(x => x.DeviceType)
                 .HasMaxLength(50);
 
+            entity.Property(x => x.ReplacedByTokenHash)
+                .HasMaxLength(128);
+
             entity.HasIndex(x => new { x.UserId, x.DeviceId });
 
             entity.HasIndex(x => x.TokenHash).IsUnique();

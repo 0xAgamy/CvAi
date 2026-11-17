@@ -146,6 +146,7 @@ public sealed class AuthenticationService : IAuthenticationService
 
         var accessToken = await _jwtTokenService.GenerateAccessTokenAsync(
             user.Id,
+            request.DeviceId.Trim(),
             cancellationToken);
 
         var roles = await _userManager.GetRolesAsync(user);
@@ -168,7 +169,7 @@ public sealed class AuthenticationService : IAuthenticationService
     }
 
     // ---------------------------------------------------------------
-    // Refresh access token
+    // Refresh access token (with refresh token rotation)
     // ---------------------------------------------------------------
 
     public async Task<ApiResponse<RefreshAccessTokenResponseDto>> RefreshAccessTokenAsync(
@@ -181,51 +182,113 @@ public sealed class AuthenticationService : IAuthenticationService
                 "Refresh token is required.");
         }
 
-        // Validate the refresh token and retrieve its owner.
-        var tokenValidation = await _refreshTokenService.ValidateAsync(
+        var rotation = await _refreshTokenService.RotateAsync(
             request.RefreshToken,
             cancellationToken);
 
-        if (tokenValidation is null)
+        if (rotation.Status == RefreshTokenRotationStatus.Reused ||
+            rotation.Status == RefreshTokenRotationStatus.Invalid)
         {
             return ApiResponse<RefreshAccessTokenResponseDto>.Fail(
                 "Invalid or expired refresh token.");
         }
 
         var user = await _userManager.FindByIdAsync(
-            tokenValidation.UserId);
+            rotation.UserId);
 
         if (user is null)
         {
+            await KillRotatedSessionAsync(rotation, cancellationToken);
+
             return ApiResponse<RefreshAccessTokenResponseDto>.Fail(
                 "User account was not found.");
         }
 
         if (!user.EmailConfirmed)
         {
+            await KillRotatedSessionAsync(rotation, cancellationToken);
+
             return ApiResponse<RefreshAccessTokenResponseDto>.Fail(
                 "Your email address is not verified.");
         }
 
         if (await _userManager.IsLockedOutAsync(user))
         {
+            await KillRotatedSessionAsync(rotation, cancellationToken);
+
             return ApiResponse<RefreshAccessTokenResponseDto>.Fail(
                 "Your account is temporarily locked.");
         }
 
-        // Generate a new access token without rotating the refresh token.
         var accessToken = await _jwtTokenService.GenerateAccessTokenAsync(
             user.Id,
+            rotation.DeviceId,
             cancellationToken);
 
         var response = new RefreshAccessTokenResponseDto
         {
             AccessToken = accessToken.Token,
-            AccessTokenExpiresAtUtc = accessToken.ExpiresAtUtc
+            AccessTokenExpiresAtUtc = accessToken.ExpiresAtUtc,
+            RefreshToken = rotation.NewToken!.Token,
+            RefreshTokenExpiresAtUtc = rotation.NewToken.ExpiresAtUtc
         };
 
         return ApiResponse<RefreshAccessTokenResponseDto>.Ok(
             response,
             "Access token refreshed successfully.");
+    }
+
+
+    private async Task KillRotatedSessionAsync(
+        RefreshTokenRotationResultDto rotation,
+        CancellationToken cancellationToken)
+    {
+        if (rotation.NewToken is not null)
+        {
+            await _refreshTokenService.RevokeByTokenAsync(
+                rotation.NewToken.Token,
+                cancellationToken);
+        }
+    }
+
+    // ---------------------------------------------------------------
+    // Logout
+    // ---------------------------------------------------------------
+
+    public async Task<ApiResponse> LogoutAsync(
+        LogoutRequestDto request,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(request.RefreshToken))
+        {
+            return ApiResponse.Fail(
+                "Refresh token is required.");
+        }
+
+        var revoked = await _refreshTokenService.RevokeByTokenAsync(
+            request.RefreshToken,
+            cancellationToken);
+
+        return revoked
+            ? ApiResponse.Ok("Logged out successfully.")
+            : ApiResponse.Fail("Session not found or already ended.");
+    }
+
+    public async Task<ApiResponse> RevokeAllSessionsAsync(
+        string userId,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            return ApiResponse.Fail(
+                "User ID is required.");
+        }
+
+        await _refreshTokenService.RevokeAllAsync(
+            userId,
+            cancellationToken);
+
+        return ApiResponse.Ok(
+            "All sessions have been revoked.");
     }
 }

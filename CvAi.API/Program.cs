@@ -11,8 +11,13 @@ using Microsoft.IdentityModel.Tokens;
 using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
-// read the configuration file
-builder.Configuration.AddJsonFile("CvAi.API/Env/Config.json");
+
+
+builder.Configuration
+    .AddJsonFile(
+        Path.Combine(builder.Environment.ContentRootPath, "Env", "Config.json"),
+        optional: true)
+    .AddEnvironmentVariables("CvAi_");
 
 
 
@@ -84,6 +89,12 @@ if (authenticationSettings.MaxActiveDevices <= 0)
 {
     throw new InvalidOperationException(
         "MaxActiveDevices must be greater than zero.");
+}
+
+if (authenticationSettings.RefreshTokenReuseGraceSeconds < 0)
+{
+    throw new InvalidOperationException(
+        "RefreshTokenReuseGraceSeconds must not be negative.");
 }
 
 builder.Services.AddSingleton(authenticationSettings);

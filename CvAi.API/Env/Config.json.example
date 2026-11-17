@@ -41,7 +41,8 @@
     "RefreshTokenExpirationDays": 30
   },
   "Authentication": {
-    "MaxActiveDevices": 5
+    "MaxActiveDevices": 5,
+    "RefreshTokenReuseGraceSeconds": 30
   },
   "PendingRegistration": {
     "OtpHashSecret": "",
