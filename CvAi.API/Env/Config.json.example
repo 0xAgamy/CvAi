@@ -53,6 +53,11 @@
     "MaxOtpAttempts": 5,
     "MaxOtpResendCount": 5
   },
+  "PasswordReset": {
+    "CodeExpirationMinutes": 15,
+    "ResendCooldownSeconds": 60,
+    "MaxAttempts": 5
+  },
   "Email": {
     "Host": "",
     "Port": 587,

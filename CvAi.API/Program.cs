@@ -171,6 +171,7 @@ builder.Services.AddIdentitySeeding(builder.Configuration);
 builder.Services.AddJwtServices();
 builder.Services.AddEmailServices();
 builder.Services.AddRegistrationServices();
+builder.Services.AddPasswordResetServices();
 
 // ---------------------------------------------------------------
 // OTP / Pending Registration Settings
@@ -217,6 +218,24 @@ if (pendingRegistrationSettings.RegistrationExpirationHours <= 0 ||
 }
 
 builder.Services.AddSingleton(pendingRegistrationSettings);
+
+// ---------------------------------------------------------------
+// Password Reset Settings
+// ---------------------------------------------------------------
+var passwordResetSettings = builder.Configuration
+    .GetSection(PasswordResetSettings.SectionName)
+    .Get<PasswordResetSettings>()
+    ?? new PasswordResetSettings();
+
+if (passwordResetSettings.CodeExpirationMinutes <= 0 ||
+    passwordResetSettings.ResendCooldownSeconds < 0 ||
+    passwordResetSettings.MaxAttempts <= 0)
+{
+    throw new InvalidOperationException(
+        "PasswordReset settings are invalid.");
+}
+
+builder.Services.AddSingleton(passwordResetSettings);
 
 // ---------------------------------------------------------------
 // Email Settings

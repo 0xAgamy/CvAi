@@ -16,6 +16,7 @@ public sealed class ApplicationDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
     public DbSet<PendingRegistration> PendingRegistrations
     => Set<PendingRegistration>();
+    public DbSet<PasswordReset> PasswordResets => Set<PasswordReset>();
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
@@ -77,6 +78,35 @@ public sealed class ApplicationDbContext : IdentityDbContext<ApplicationUser>
 
             entity.HasIndex(x => x.NormalizedEmail)
                 .IsUnique();
+
+            entity.HasIndex(x => x.ExpiresAtUtc);
+        });
+
+        builder.Entity<PasswordReset>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+
+            entity.Property(x => x.UserId)
+                .HasMaxLength(450)
+                .IsRequired();
+
+            entity.Property(x => x.Email)
+                .HasMaxLength(256)
+                .IsRequired();
+
+            entity.Property(x => x.NormalizedEmail)
+                .HasMaxLength(256)
+                .IsRequired();
+
+            entity.Property(x => x.CodeHash)
+                .HasMaxLength(128)
+                .IsRequired();
+
+            // One active reset request per user; a new request replaces it.
+            entity.HasIndex(x => x.UserId)
+                .IsUnique();
+
+            entity.HasIndex(x => x.NormalizedEmail);
 
             entity.HasIndex(x => x.ExpiresAtUtc);
         });

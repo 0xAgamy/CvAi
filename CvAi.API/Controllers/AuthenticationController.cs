@@ -12,11 +12,14 @@ namespace CvAi.API.Controllers;
 public sealed class AuthenticationController : ControllerBase
 {
     private readonly IAuthenticationService _authenticationService;
+    private readonly IPasswordResetService _passwordResetService;
 
     public AuthenticationController(
-        IAuthenticationService authenticationService)
+        IAuthenticationService authenticationService,
+        IPasswordResetService passwordResetService)
     {
         _authenticationService = authenticationService;
+        _passwordResetService = passwordResetService;
     }
 
 
@@ -110,6 +113,40 @@ public sealed class AuthenticationController : ControllerBase
         return result.Success
             ? Ok(result)
             : Unauthorized(result);
+    }
+
+
+    [HttpPost("forgot-password")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> ForgotPassword(
+        [FromBody] ForgotPasswordRequestDto request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _passwordResetService.RequestResetAsync(
+            request,
+            cancellationToken);
+
+        return result.Success
+            ? Ok(result)
+            : BadRequest(result);
+    }
+
+
+    [HttpPost("reset-password")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> ResetPassword(
+        [FromBody] ResetPasswordRequestDto request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _passwordResetService.ResetPasswordAsync(
+            request,
+            cancellationToken);
+
+        return result.Success
+            ? Ok(result)
+            : BadRequest(result);
     }
 
 
