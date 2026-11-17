@@ -1,33 +1,42 @@
 ﻿using CvAi.Application.Abstractions.Authentication;
+using CvAi.Application.Abstractions.Files;
 using CvAi.Application.Common.Models;
 using CvAi.Application.DTOs.Authentication;
 using CvAi.Infrastructure.Identity;
+using CvAi.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace CvAi.Infrastructure.Identity.Services;
 
-/// <summary>
-/// Login and token refresh live here. The registration / OTP flow is
-/// delegated to <see cref="IPendingRegistrationService"/> so that the logic
-/// exists in exactly one place.
-/// </summary>
+
 public sealed class AuthenticationService : IAuthenticationService
 {
     private readonly UserManager<ApplicationUser> _userManager;
     private readonly IJwtTokenService _jwtTokenService;
     private readonly IRefreshTokenService _refreshTokenService;
     private readonly IPendingRegistrationService _pendingRegistrationService;
+    private readonly ApplicationDbContext _context;
+    private readonly IImageService _imageService;
+    private readonly ILogger<AuthenticationService> _logger;
 
     public AuthenticationService(
         UserManager<ApplicationUser> userManager,
         IJwtTokenService jwtTokenService,
         IRefreshTokenService refreshTokenService,
-        IPendingRegistrationService pendingRegistrationService)
+        IPendingRegistrationService pendingRegistrationService,
+        ApplicationDbContext context,
+        IImageService imageService,
+        ILogger<AuthenticationService> logger)
     {
         _userManager = userManager;
         _jwtTokenService = jwtTokenService;
         _refreshTokenService = refreshTokenService;
         _pendingRegistrationService = pendingRegistrationService;
+        _context = context;
+        _imageService = imageService;
+        _logger = logger;
     }
 
     // ---------------------------------------------------------------
@@ -290,5 +299,110 @@ public sealed class AuthenticationService : IAuthenticationService
 
         return ApiResponse.Ok(
             "All sessions have been revoked.");
+    }
+
+    // ---------------------------------------------------------------
+    // Delete account
+    // ---------------------------------------------------------------
+
+    public async Task<ApiResponse> DeleteAccountAsync(
+        string userId,
+        DeleteAccountRequestDto request,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            return ApiResponse.Fail("User ID is required.");
+        }
+
+        if (string.IsNullOrWhiteSpace(request.Password))
+        {
+            return ApiResponse.Fail(
+                "Password is required to delete the account.");
+        }
+
+        var user = await _userManager.FindByIdAsync(userId);
+
+        if (user is null)
+        {
+            return ApiResponse.Fail("User account was not found.");
+        }
+
+        if (await _userManager.IsLockedOutAsync(user))
+        {
+            return ApiResponse.Fail(
+                "Your account is temporarily locked. Please try again later.");
+        }
+
+        var passwordValid = await _userManager.CheckPasswordAsync(
+            user,
+            request.Password);
+
+        if (!passwordValid)
+        {
+        
+            await _userManager.AccessFailedAsync(user);
+
+            return ApiResponse.Fail("Incorrect password.");
+        }
+
+        await _userManager.ResetAccessFailedCountAsync(user);
+
+        // If anything below fails, disposing the transaction rolls it back.
+        await using var transaction =
+            await _context.Database.BeginTransactionAsync(cancellationToken);
+
+
+        await _context.RefreshTokens
+            .Where(x => x.UserId == userId)
+            .ExecuteDeleteAsync(cancellationToken);
+
+        await _context.PasswordResets
+            .Where(x => x.UserId == userId)
+            .ExecuteDeleteAsync(cancellationToken);
+
+        if (!string.IsNullOrWhiteSpace(user.Email))
+        {
+            var normalizedEmail = _userManager.NormalizeEmail(user.Email);
+
+            await _context.PendingRegistrations
+                .Where(x => x.NormalizedEmail == normalizedEmail)
+                .ExecuteDeleteAsync(cancellationToken);
+        }
+
+        var deleteResult = await _userManager.DeleteAsync(user);
+
+        if (!deleteResult.Succeeded)
+        {
+            return ApiResponse.Fail(
+                string.Join(
+                    " ",
+                    deleteResult.Errors.Select(x => x.Description)));
+        }
+
+        await _context.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+
+   
+        if (!string.IsNullOrWhiteSpace(user.ProfileImageKey))
+        {
+            try
+            {
+                await _imageService.DeleteAsync(
+                    user.ProfileImageKey,
+                    cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(
+                    ex,
+                    "Failed to delete the profile image {ImageKey} of deleted user {UserId}.",
+                    user.ProfileImageKey,
+                    userId);
+            }
+        }
+
+        return ApiResponse.Ok(
+            "Your account has been deleted successfully.");
     }
 }
