@@ -11,7 +11,10 @@ using Microsoft.IdentityModel.Tokens;
 using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
-// add openapi for api documentation
+// read the configuration file
+builder.Configuration.AddJsonFile("CvAi.API/Env/Config.json");
+
+
 
 
 // ---------------------------------------------------------------
